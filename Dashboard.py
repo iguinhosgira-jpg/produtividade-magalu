@@ -8,7 +8,7 @@ import os
 import json
 
 # --- CONFIGURAÇÃO DA PÁGINA (CLASSE AAA+) ---
-st.set_page_config(page_title="Torre de Controle Inbound | Magalu", page_icon="🗼", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Torre de Controle Inbound | Magalu", page_icon="⚡️", layout="wide", initial_sidebar_state="expanded")
 
 # --- ESTILIZAÇÃO PREMIUM CSS ---
 st.markdown("""
@@ -109,7 +109,7 @@ if not df_bruto.empty:
     # PAINEL DE FILTROS SUPERIORES (SIDEBAR)
     # =========================================================================
     st.sidebar.image("https://magalog.com.br/opengraph-image.jpg?fdd536e7d35ec9da", width=220)
-    st.sidebar.markdown("<h2 style='color: #0086FF;'>🎛️ Filtros Globais</h2>", unsafe_allow_html=True)
+    st.sidebar.markdown("<h2 style='color: #0086FF;'>🎛️ Filtros </h2>", unsafe_allow_html=True)
     
     # Filtro de Período
     data_min = df_bruto['Data_Ref'].min()
@@ -209,7 +209,7 @@ if not df_bruto.empty:
         with c1: exibir_kpi("Agendas Armazenadas", qtd_agendas_op, "Cargas movimentadas", "#0086FF")
         with c2: exibir_kpi("Etiquetas Guardadas", f"{qtd_etiquetas_op:,.0f}".replace(',','.'), "Pallets armazenados", "#9B59B6")
         with c3: exibir_kpi("Peças Físicas", f"{qtd_pecas_op:,.0f}".replace(',','.'), "Volume total", "#4CAF50")
-        with c4: exibir_kpi("SLA Médio Doca", txt_sla_op, "Tempo médio esperando", "#F44336")
+        with c4: exibir_kpi("Tpm Médio Doca", txt_sla_op, "Tempo médio do pallet em stage", "#F44336")
 
         st.markdown("---")
 
@@ -225,7 +225,7 @@ if not df_bruto.empty:
             
             fig_fluxo = go.Figure()
             fig_fluxo.add_trace(go.Bar(x=df_fluxo['Hora'], y=df_fluxo['Guardado_Rua'], name='Guardado (Operador)', marker_color='#3498DB', text=df_fluxo['Guardado_Rua'], textposition='auto', textfont=dict(color='white', weight='bold')))
-            fig_fluxo.add_trace(go.Scatter(x=df_fluxo['Hora'], y=df_fluxo['Liberado_Doca'], name='Liberado (Conferente)', mode='lines+markers+text', text=df_fluxo['Liberado_Doca'], textposition='top center', line=dict(color='#E74C3C', width=3, dash='dot'), textfont=dict(color='#E74C3C', weight='bold')))
+            fig_fluxo.add_trace(go.Scatter(x=df_fluxo['Hora'], y=df_fluxo['Liberado_Doca'], name='Etiquetas Conferidas H', mode='lines+markers+text', text=df_fluxo['Liberado_Doca'], textposition='top center', line=dict(color='#E74C3C', width=3, dash='dot'), textfont=dict(color='#E74C3C', weight='bold')))
             fig_fluxo.update_layout(plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", y=1.15))
             st.plotly_chart(fig_fluxo, use_container_width=True)
 
@@ -258,3 +258,4 @@ if not df_bruto.empty:
 
 else:
     st.error("⚠️ Não foi possível carregar os dados. Verifique a conexão com o Google Sheets.")
+
