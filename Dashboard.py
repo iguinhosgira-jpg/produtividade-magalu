@@ -8,7 +8,7 @@ import os
 import json
 
 # --- CONFIGURAÇÃO DA PÁGINA (CLASSE AAA+) ---
-st.set_page_config(page_title="Torre de Controle Inbound | Magalu", page_icon="🗼", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Torre de Controle Inbound | Magalu", page_icon="⚡️", layout="wide", initial_sidebar_state="expanded")
 
 # --- ESTILIZAÇÃO PREMIUM CSS ---
 st.markdown("""
@@ -304,4 +304,5 @@ if not df_bruto.empty:
 
 else:
     st.error("⚠️ Não foi possível carregar os dados. Verifique a conexão com o Google Sheets.")
+
 
