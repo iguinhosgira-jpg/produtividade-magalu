@@ -60,7 +60,7 @@ def popup_detalhe_hora(hora, df_filtrado):
     
     colA, colB = st.columns(2)
     with colA:
-        st.markdown("#### 🏆 Corrida dos Operadores na Hora")
+        st.markdown("#### 🏆 TOP operadores Hora")
         top_ops = df_hora.groupby('OPERADOR')['NU_ETIQUETA'].nunique().reset_index().sort_values('NU_ETIQUETA', ascending=False)
         top_ops.columns = ['Operador', 'Etiquetas']
         st.dataframe(top_ops, use_container_width=True, hide_index=True)
@@ -71,7 +71,7 @@ def popup_detalhe_hora(hora, df_filtrado):
         top_forn.columns = ['Fornecedor', 'Etiquetas']
         st.dataframe(top_forn, use_container_width=True, hide_index=True)
         
-    st.markdown("#### 📋 Lista Cirúrgica de Etiquetas (LPNs)")
+    st.markdown("#### 📋 Relatório Geral - Detalhado")
     df_lista = df_hora[['AGENDA', 'FORNECEDOR', 'NU_ETIQUETA', 'QT_PRODUTO', 'OPERADOR', 'Tipo_Area', 'Tempo_Espera_Minutos']].copy()
     df_lista['Tempo_Espera_Minutos'] = df_lista['Tempo_Espera_Minutos'].apply(lambda x: f"{int(x//60)}h {int(x%60)}m" if x > 0 else "0m")
     df_lista.columns = ['Agenda', 'Fornecedor', 'Etiqueta', 'Qtd Peças', 'Operador', 'Área Destino', 'SLA Doca']
@@ -304,3 +304,4 @@ if not df_bruto.empty:
 
 else:
     st.error("⚠️ Não foi possível carregar os dados. Verifique a conexão com o Google Sheets.")
+
