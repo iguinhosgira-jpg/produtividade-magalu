@@ -33,11 +33,10 @@ def exibir_kpi(titulo, valor, subtitulo="", cor="#0086FF"):
 @st.cache_data(ttl=300)
 def carregar_dados_produtividade():
     try:
-        diretorio_atual = os.path.dirname(os.path.abspath(__file__))
-        caminho_credencial = os.path.join(diretorio_atual, 'credential_key.json')
-        
-        creds = Credentials.from_service_account_file(
-            caminho_credencial, 
+        # LÓGICA DE NUVEM: Lê as credenciais diretamente do Cofre do Streamlit (Secrets)
+        cred_dict = json.loads(st.secrets["google_json"])
+        creds = Credentials.from_service_account_info(
+            cred_dict, 
             scopes=["https://www.googleapis.com/auth/spreadsheets"]
         )
         client = gspread.authorize(creds)
@@ -50,22 +49,14 @@ def carregar_dados_produtividade():
         
         # --- TRATAMENTO DE COLUNAS ---
         df['QT_PRODUTO'] = pd.to_numeric(df['QT_PRODUTO'], errors='coerce').fillna(0)
-        
-        # Correção dos Formatos de Data
         df['DT_CONFERENCIA'] = pd.to_datetime(df['DT_CONFERENCIA'], errors='coerce') 
         df['DT_ARMAZENAGEM'] = pd.to_datetime(df['DT_ARMAZENAGEM'], dayfirst=True, errors='coerce')
-        
         df['Hora_Conf'] = df['DT_CONFERENCIA'].dt.strftime('%H:00')
         df['Hora_Armz'] = df['DT_ARMAZENAGEM'].dt.strftime('%H:00')
         df['Data_Ref'] = df['DT_ARMAZENAGEM'].dt.date
-        
-        # SLA Doca
         df['Tempo_Espera_Minutos'] = (df['DT_ARMAZENAGEM'] - df['DT_CONFERENCIA']).dt.total_seconds() / 60.0
         
-        # 🚀 NOVO: CLASSIFICAÇÃO DA ÁREA (Lendo a Coluna F)
-        # O Pandas começa a contar do 0. Então: A=0, B=1, C=2, D=3, E=4, F=5.
         nome_coluna_f = df.columns[5]
-        
         def mapear_area(endereco):
             end_str = str(endereco).strip().upper()
             if end_str.startswith('G'): return 'Blocado'
@@ -224,4 +215,5 @@ if not df.empty:
         st.dataframe(ranking.sort_values('Etiquetas', ascending=False), use_container_width=True, hide_index=True)
 
 else:
+
     st.error("Não há dados formatados corretamente. Verifique se a planilha tem datas válidas.")
