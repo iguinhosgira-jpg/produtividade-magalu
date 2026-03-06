@@ -139,7 +139,7 @@ if not df_bruto.empty:
     # =========================================================================
     # PAINEL DE FILTROS SUPERIORES (SIDEBAR)
     # =========================================================================
-    st.sidebar.image("https://magalog.com.br/opengraph-image.jpg?fdd536e7d35ec9da", width=220)
+    st.sidebar.image("https://magalog.com.br/opengraph-image.jpg?fdd536e7d35ec9da", width=300)
     st.sidebar.markdown("<h2 style='color: #0086FF;'>🎛️ Filtros Globais</h2>", unsafe_allow_html=True)
     
     data_min = df_bruto['Data_Ref'].min()
@@ -304,6 +304,7 @@ if not df_bruto.empty:
 
 else:
     st.error("⚠️ Não foi possível carregar os dados. Verifique a conexão com o Google Sheets.")
+
 
 
 
