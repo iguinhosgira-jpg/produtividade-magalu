@@ -119,15 +119,28 @@ if not df_bruto.empty:
     df_fluxo['Pendências'] = df_fluxo['Acum_Conf'] - df_fluxo['Acum_Armz']
     df_fluxo['Pendências'] = df_fluxo['Pendências'].apply(lambda x: x if x > 0 else 0)
 
+    # --- ATUALIZAÇÃO: RÓTULOS ADICIONADOS AQUI ---
     fig_fluxo = go.Figure()
-    fig_fluxo.add_trace(go.Bar(x=df_fluxo['Hora'], y=df_fluxo['Armazenados'], name='Armazenados (Produção)', marker_color='#0086FF'))
-    fig_fluxo.add_trace(go.Bar(x=df_fluxo['Hora'], y=df_fluxo['Conferidos'], name='Conferidos (Demanda)', marker_color='#9d26ff'))
-    fig_fluxo.add_trace(go.Scatter(x=df_fluxo['Hora'], y=df_fluxo['Pendências'], name='Pendências (Doca)', mode='lines+markers', line=dict(color='#E74C3C', width=3), yaxis='y2'))
+    
+    fig_fluxo.add_trace(go.Bar(
+        x=df_fluxo['Hora'], y=df_fluxo['Armazenados'], name='Armazenados (Produção)', 
+        marker_color='#0086FF', text=df_fluxo['Armazenados'], textposition='auto', textfont=dict(color='white')
+    ))
+    
+    fig_fluxo.add_trace(go.Bar(
+        x=df_fluxo['Hora'], y=df_fluxo['Conferidos'], name='Conferidos (Demanda)', 
+        marker_color='#9d26ff', text=df_fluxo['Conferidos'], textposition='outside', textfont=dict(color='#9d26ff')
+    ))
+    
+    fig_fluxo.add_trace(go.Scatter(
+        x=df_fluxo['Hora'], y=df_fluxo['Pendências'], name='Pendências (Doca)', mode='lines+markers+text', 
+        line=dict(color='#E74C3C', width=3), yaxis='y2', text=df_fluxo['Pendências'], textposition='top center', textfont=dict(color='#E74C3C', weight='bold')
+    ))
     
     fig_fluxo.update_layout(
         plot_bgcolor='rgba(0,0,0,0)', barmode='group',
         legend=dict(orientation="h", y=1.15, x=0.5, xanchor='center'),
-        yaxis=dict(title="Qtd Etiquetas"),
+        yaxis=dict(title="Qtd Etiquetas", showgrid=True, gridcolor='#F1F3F5', range=[0, max(df_fluxo[['Armazenados', 'Conferidos']].max()) * 1.2]), # Espaço extra pro texto não cortar
         yaxis2=dict(title="Pendências Acumuladas", overlaying='y', side='right', showgrid=False),
         hovermode="x unified"
     )
@@ -154,4 +167,3 @@ if not df_bruto.empty:
 
 else:
     st.error("⚠️ Dados não encontrados para a data selecionada.")
-
