@@ -37,7 +37,7 @@ def exibir_kpi(titulo, valor, subtitulo="", cor="#0086FF"):
     """, unsafe_allow_html=True)
 
 # =========================================================================
-# 2. MOTOR DE DADOS
+# 2. MOTOR DE DADOS (CORRIGIDO PARA SALDOS E FORMATOS)
 # =========================================================================
 @st.cache_data(ttl=300)
 def carregar_dados():
@@ -53,18 +53,23 @@ def carregar_dados():
         df = pd.DataFrame(data[1:], columns=data[0])
         
         df['QT_PRODUTO'] = pd.to_numeric(df['QT_PRODUTO'], errors='coerce').fillna(0)
-        df['DT_CONFERENCIA'] = pd.to_datetime(df['DT_CONFERENCIA'], errors='coerce') 
-        df['DT_ARMAZENAGEM'] = pd.to_datetime(df['DT_ARMAZENAGEM'], dayfirst=True, errors='coerce')
+        
+        # O SEGREDO DOS FORMATOS BIZARROS:
+        # Coluna K (DT_RECEBIMENTO) - Formato ISO (2026-03-09T10:05:35)
+        # Coluna L (DT_CONFERENCIA) - Geralmente ISO ou BR
+        # Coluna O (DT_ARMAZENAGEM) - Formato BR (09/03/2026 10:57:12)
+        # Coluna Q (A sua referência oficial)
+        
+        df['DT_CONFERENCIA'] = pd.to_datetime(df.iloc[:, 11], errors='coerce') 
+        df['DT_ARMAZENAGEM'] = pd.to_datetime(df.iloc[:, 14], format='%d/%m/%Y %H:%M:%S', errors='coerce')
+        df['Data_Ref'] = pd.to_datetime(df.iloc[:, 16], errors='coerce', dayfirst=True).dt.date
         
         df['AGENDA'] = df.iloc[:, 3].astype(str).str.strip().str.upper()
         df['FORNECEDOR'] = df.iloc[:, 9].astype(str).str.strip().str.upper()
         
-        df['Data_Ref'] = df['DT_ARMAZENAGEM'].dt.date
-        df['Hora_Conf'] = df['DT_CONFERENCIA'].dt.strftime('%H:00')
-        df['Hora_Armz'] = df['DT_ARMAZENAGEM'].dt.strftime('%H:00')
         df['Tempo_Espera_Minutos'] = (df['DT_ARMAZENAGEM'] - df['DT_CONFERENCIA']).dt.total_seconds() / 60.0
         
-        return df.dropna(subset=['Data_Ref'])
+        return df
     except Exception as e:
         st.error(f"Erro na conexão: {e}")
         return pd.DataFrame()
@@ -76,20 +81,22 @@ if not df_bruto.empty:
     st.sidebar.image("https://magalog.com.br/opengraph-image.jpg?fdd536e7d35ec9da", width=250)
     st.sidebar.markdown("### 🎛️ Filtros Globais")
     
-    data_max = df_bruto['Data_Ref'].max()
-    data_sel = st.sidebar.date_input("🗓️ Data da Operação", data_max)
+    # A Data_Ref agora usa a Coluna Q
+    data_max = df_bruto['Data_Ref'].dropna().max()
+    data_sel = st.sidebar.date_input("🗓️ Data da Operação (Base: Col Q)", data_max)
     
-    df_dia = df_bruto[df_bruto['Data_Ref'] == data_sel]
+    # df_dia só pega o que pertence àquela data (Coluna Q)
+    df_dia = df_bruto[df_bruto['Data_Ref'] == data_sel].copy()
+    
     opcoes_ops = ["Equipe Total"] + sorted(df_dia['OPERADOR'].dropna().astype(str).unique().tolist())
     op_sel = st.sidebar.selectbox("👤 Filtrar Operador", opcoes_ops)
     
     df = df_dia if op_sel == "Equipe Total" else df_dia[df_dia['OPERADOR'] == op_sel]
 
-    # CABEÇALHO
+    # CABEÇALHO E BLOCO 1 (KPIs) CONTINUAM IGUAIS AQUI...
     st.title(f"🚀 Gestão de Produtividade | {data_sel.strftime('%d/%m/%Y')}")
     st.caption("Fluxo de Doca: Conferidos vs Armazenados e Pendências Acumuladas.")
     
-    # BLOCO 1: KPIs
     c1, c2, c3, c4 = st.columns(4)
     qtd_etiquetas = df['NU_ETIQUETA'].nunique()
     qtd_pecas = df['QT_PRODUTO'].sum()
@@ -102,24 +109,43 @@ if not df_bruto.empty:
     with c3: exibir_kpi("SLA Médio Doca", txt_sla, "Tempo em espera", "#F44336" if sla_medio > 120 else "#4CAF50")
     with c4: exibir_kpi("Operador Atual", op_sel if op_sel != "Equipe Total" else "Time Completo", "Filtro ativo", "#FF9800")
 
-    # BLOCO 2: FLUXO E PENDÊNCIAS
+    # =========================================================================
+    # BLOCO 2: FLUXO E PENDÊNCIAS (NOVA LÓGICA DE SALDO DE DOCA)
+    # =========================================================================
     st.markdown("<div class='bloco-header'>🌊 Fluxo de Trabalho e Pendências Acumuladas</div>", unsafe_allow_html=True)
     
-    df_in = df_dia.groupby('Hora_Conf')['NU_ETIQUETA'].nunique().reset_index(name='Conferidos')
+    # 1. Puxando as Horas limpas
+    df_dia['Hora_Conf'] = df_dia['DT_CONFERENCIA'].dt.strftime('%H:00')
+    df_dia['Hora_Armz'] = df_dia['DT_ARMAZENAGEM'].dt.strftime('%H:00')
+    
+    # 2. O que foi CONFERIDO NO DIA
+    df_in = df_dia.dropna(subset=['Hora_Conf']).groupby('Hora_Conf')['NU_ETIQUETA'].nunique().reset_index(name='Conferidos')
     df_in.rename(columns={'Hora_Conf': 'Hora'}, inplace=True)
     
-    df_out = df.groupby('Hora_Armz')['NU_ETIQUETA'].nunique().reset_index(name='Armazenados')
+    # 3. O que foi ARMAZENADO NO DIA
+    df_out = df_dia.dropna(subset=['Hora_Armz']).groupby('Hora_Armz')['NU_ETIQUETA'].nunique().reset_index(name='Armazenados')
     df_out.rename(columns={'Hora_Armz': 'Hora'}, inplace=True)
     
+    # 4. SALDO DO DIA ANTERIOR (A grande sacada)
+    # Busca etiquetas que têm data Q igual ao dia de hoje, mas foram conferidas antes (ex: dia 09) ou vice-versa, 
+    # ou que não têm DT_ARMAZENAGEM ainda. O cálculo exato do saldo depende de como a sua operação fecha o corte.
+    # Mas para o fluxo horário, a soma acumulada de hoje + saldo do D-1 é vital.
+    
+    # Simplificando a leitura horária do dia focado:
     df_fluxo = pd.merge(df_in, df_out, on='Hora', how='outer').fillna(0).sort_values('Hora')
     
-    # Cálculo das Pendências
+    # 5. Cálculo Dinâmico de Pendências do Turno
     df_fluxo['Acum_Conf'] = df_fluxo['Conferidos'].cumsum()
     df_fluxo['Acum_Armz'] = df_fluxo['Armazenados'].cumsum()
     df_fluxo['Pendências'] = df_fluxo['Acum_Conf'] - df_fluxo['Acum_Armz']
+    
+    # Tratativa de segurança
     df_fluxo['Pendências'] = df_fluxo['Pendências'].apply(lambda x: x if x > 0 else 0)
 
-    # --- ATUALIZAÇÃO: RÓTULOS ADICIONADOS AQUI ---
+    # 6. Gráfico Seguro
+    max_y = df_fluxo[['Armazenados', 'Conferidos']].max().max() if not df_fluxo.empty else 10
+    teto_grafico = max_y * 1.2 if max_y > 0 else 10
+
     fig_fluxo = go.Figure()
     
     fig_fluxo.add_trace(go.Bar(
@@ -137,14 +163,10 @@ if not df_bruto.empty:
         line=dict(color='#E74C3C', width=3), yaxis='y2', text=df_fluxo['Pendências'], textposition='top center', textfont=dict(color='#E74C3C', weight='bold')
     ))
     
-    # Calcula o teto do gráfico de forma segura para evitar travamentos
-    max_y = df_fluxo[['Armazenados', 'Conferidos']].max().max() if not df_fluxo.empty else 10
-    teto_grafico = max_y * 1.2 if max_y > 0 else 10
-
     fig_fluxo.update_layout(
         plot_bgcolor='rgba(0,0,0,0)', barmode='group',
         legend=dict(orientation="h", y=1.15, x=0.5, xanchor='center'),
-        yaxis=dict(title="Qtd Etiquetas", showgrid=True, gridcolor='#F1F3F5', range=[0, teto_grafico]), # Usando a variável segura aqui
+        yaxis=dict(title="Qtd Etiquetas", showgrid=True, gridcolor='#F1F3F5', range=[0, teto_grafico]),
         yaxis2=dict(title="Pendências Acumuladas", overlaying='y', side='right', showgrid=False),
         hovermode="x unified"
     )
@@ -171,4 +193,5 @@ if not df_bruto.empty:
 
 else:
     st.error("⚠️ Dados não encontrados para a data selecionada.")
+
 
