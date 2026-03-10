@@ -37,7 +37,7 @@ def exibir_kpi(titulo, valor, subtitulo="", cor="#0086FF"):
     """, unsafe_allow_html=True)
 
 # =========================================================================
-# 2. MOTOR DE DADOS (CORRIGIDO PARA COLUNAS EXATAS E SITUAÇÃO)
+# 2. MOTOR DE DADOS (VERSÃO ESTÁVEL + DATA BLINDADA)
 # =========================================================================
 @st.cache_data(ttl=300)
 def carregar_dados():
@@ -52,20 +52,21 @@ def carregar_dados():
         
         df = pd.DataFrame(data[1:], columns=data[0])
         
-        # Mapeamento Exato de Colunas (Zero-based index)
-        # B(1)=ETIQUETA, F(5)=QT_PRODUTO, H(7)=SITUACAO
-        # M(12)=DT_CONFERENCIA, O(14)=DT_ARMAZENAGEM, Q(16)=DATA_REF, R(17)=OPERADOR
+        df['QT_PRODUTO'] = pd.to_numeric(df['QT_PRODUTO'], errors='coerce').fillna(0)
         
-        df['NU_ETIQUETA'] = df.iloc[:, 1].astype(str).str.strip()
-        df['QT_PRODUTO'] = pd.to_numeric(df.iloc[:, 5], errors='coerce').fillna(0)
-        df['SITUACAO'] = df.iloc[:, 7].astype(str).str.strip()
-        df['OPERADOR'] = df.iloc[:, 17].astype(str).str.strip()
+        # --- A CORREÇÃO DE OURO PARA O PROBLEMA DO DIA 10 ---
+        # Forçando o Pandas a tentar adivinhar o formato, mas passando 'dayfirst=True' e 'mixed' 
+        # para lidar com a mistura de ISO (2026-03-10) e BR (10/03/2026) que ocorre na planilha.
+        df['DT_CONFERENCIA'] = pd.to_datetime(df['DT_CONFERENCIA'], errors='coerce', dayfirst=True, format='mixed') 
+        df['DT_ARMAZENAGEM'] = pd.to_datetime(df['DT_ARMAZENAGEM'], errors='coerce', dayfirst=True, format='mixed')
         
-        # O ERRO TAVA AQUI: Puxando a M (12) em vez de L (11)
-        df['DT_CONFERENCIA'] = pd.to_datetime(df.iloc[:, 12], errors='coerce') 
-        df['DT_ARMAZENAGEM'] = pd.to_datetime(df.iloc[:, 14], format='%d/%m/%Y %H:%M:%S', errors='coerce')
-        df['Data_Ref'] = pd.to_datetime(df.iloc[:, 16], errors='coerce', dayfirst=True).dt.date
+        df['AGENDA'] = df['AGENDA'].astype(str).str.strip().str.upper()
+        df['FORNECEDOR'] = df['FORNECEDOR'].astype(str).str.strip().str.upper()
         
+        # Mantendo a lógica de Data Base pela DT_ARMAZENAGEM (como estava funcionando antes)
+        df['Data_Ref'] = df['DT_ARMAZENAGEM'].dt.date
+        df['Hora_Conf'] = df['DT_CONFERENCIA'].dt.strftime('%H:00')
+        df['Hora_Armz'] = df['DT_ARMAZENAGEM'].dt.strftime('%H:00')
         df['Tempo_Espera_Minutos'] = (df['DT_ARMAZENAGEM'] - df['DT_CONFERENCIA']).dt.total_seconds() / 60.0
         
         return df.dropna(subset=['Data_Ref'])
@@ -81,13 +82,13 @@ if not df_bruto.empty:
     st.sidebar.markdown("### 🎛️ Filtros Globais")
     
     data_max = df_bruto['Data_Ref'].max()
-    data_sel = st.sidebar.date_input("🗓️ Data da Operação (Base: Col Q)", data_max)
+    data_sel = st.sidebar.date_input("🗓️ Data da Operação", data_max)
     
-    df_dia = df_bruto[df_bruto['Data_Ref'] == data_sel].copy()
-    opcoes_ops = ["Equipe Total"] + sorted(df_dia['OPERADOR'].replace('nan', '').dropna().unique().tolist())
-    # Limpa caso haja operador em branco
-    opcoes_ops = [op for op in opcoes_ops if op] 
+    df_dia = df_bruto[df_bruto['Data_Ref'] == data_sel]
     
+    # Tratando para não aparecer "nan" na lista de operadores
+    operadores_validos = [op for op in df_dia['OPERADOR'].unique() if pd.notna(op) and str(op).strip() != '']
+    opcoes_ops = ["Equipe Total"] + sorted(operadores_validos)
     op_sel = st.sidebar.selectbox("👤 Filtrar Operador", opcoes_ops)
     
     df = df_dia if op_sel == "Equipe Total" else df_dia[df_dia['OPERADOR'] == op_sel]
@@ -98,65 +99,52 @@ if not df_bruto.empty:
     
     # BLOCO 1: KPIs
     c1, c2, c3, c4 = st.columns(4)
-    
-    # Armazenados são os que estão com Situação 25 (Ou tem data de armazenagem)
-    qtd_armazenados = df[df['SITUACAO'] == '25']['NU_ETIQUETA'].nunique()
-    qtd_pecas = df[df['SITUACAO'] == '25']['QT_PRODUTO'].sum()
-    
-    # Pendentes são exclusivamente os da Situação 23
-    qtd_pendentes = df_dia[df_dia['SITUACAO'] == '23']['NU_ETIQUETA'].nunique()
-    
+    qtd_etiquetas = df['NU_ETIQUETA'].nunique()
+    qtd_pecas = df['QT_PRODUTO'].sum()
     espera_valida = df[df['Tempo_Espera_Minutos'] > 0]['Tempo_Espera_Minutos']
     sla_medio = espera_valida.mean() if not espera_valida.empty else 0
     txt_sla = f"{int(sla_medio // 60)}h {int(sla_medio % 60)}m"
     
-    with c1: exibir_kpi("Armazenados (Sit. 25)", f"{qtd_armazenados:,.0f}".replace(',','.'), "Etiquetas guardadas", "#0086FF")
-    with c2: exibir_kpi("Pendentes (Sit. 23)", f"{qtd_pendentes:,.0f}".replace(',','.'), "Na fila da doca", "#E74C3C")
+    with c1: exibir_kpi("Total Armazenados", f"{qtd_etiquetas:,.0f}".replace(',','.'), "Etiquetas bipadas", "#0086FF")
+    with c2: exibir_kpi("Peças Processadas", f"{qtd_pecas:,.0f}".replace(',','.'), "Volume físico total", "#9B59B6")
     with c3: exibir_kpi("SLA Médio Doca", txt_sla, "Tempo em espera", "#F44336" if sla_medio > 120 else "#4CAF50")
     with c4: exibir_kpi("Operador Atual", op_sel if op_sel != "Equipe Total" else "Time Completo", "Filtro ativo", "#FF9800")
 
-    # =========================================================================
     # BLOCO 2: FLUXO E PENDÊNCIAS
-    # =========================================================================
     st.markdown("<div class='bloco-header'>🌊 Fluxo de Trabalho e Pendências Acumuladas</div>", unsafe_allow_html=True)
     
-    df_dia['Hora_Conf'] = df_dia['DT_CONFERENCIA'].dt.strftime('%H:00')
-    df_dia['Hora_Armz'] = df_dia['DT_ARMAZENAGEM'].dt.strftime('%H:00')
-    
-    # Conferidos na hora (Independente de estar 23 ou 25)
-    df_in = df_dia.dropna(subset=['Hora_Conf']).groupby('Hora_Conf')['NU_ETIQUETA'].nunique().reset_index(name='Conferidos')
+    df_in = df_dia.groupby('Hora_Conf')['NU_ETIQUETA'].nunique().reset_index(name='Conferidos')
     df_in.rename(columns={'Hora_Conf': 'Hora'}, inplace=True)
     
-    # Armazenados na hora (Situação 25)
-    df_out = df_dia[df_dia['SITUACAO'] == '25'].dropna(subset=['Hora_Armz']).groupby('Hora_Armz')['NU_ETIQUETA'].nunique().reset_index(name='Armazenados')
+    df_out = df.groupby('Hora_Armz')['NU_ETIQUETA'].nunique().reset_index(name='Armazenados')
     df_out.rename(columns={'Hora_Armz': 'Hora'}, inplace=True)
     
     df_fluxo = pd.merge(df_in, df_out, on='Hora', how='outer').fillna(0).sort_values('Hora')
     
-    # Cálculo das Pendências Dinâmicas
+    # Cálculo das Pendências
     df_fluxo['Acum_Conf'] = df_fluxo['Conferidos'].cumsum()
     df_fluxo['Acum_Armz'] = df_fluxo['Armazenados'].cumsum()
     df_fluxo['Pendências'] = df_fluxo['Acum_Conf'] - df_fluxo['Acum_Armz']
     df_fluxo['Pendências'] = df_fluxo['Pendências'].apply(lambda x: x if x > 0 else 0)
 
-    # Seguro contra travamentos
+    # Seguro contra travamento do range do gráfico (como já havíamos arrumado)
     max_y = df_fluxo[['Armazenados', 'Conferidos']].max().max() if not df_fluxo.empty else 10
     teto_grafico = max_y * 1.2 if max_y > 0 else 10
 
     fig_fluxo = go.Figure()
     
     fig_fluxo.add_trace(go.Bar(
-        x=df_fluxo['Hora'], y=df_fluxo['Armazenados'], name='Armazenados (Sit. 25)', 
+        x=df_fluxo['Hora'], y=df_fluxo['Armazenados'], name='Armazenados (Produção)', 
         marker_color='#0086FF', text=df_fluxo['Armazenados'], textposition='auto', textfont=dict(color='white')
     ))
     
     fig_fluxo.add_trace(go.Bar(
-        x=df_fluxo['Hora'], y=df_fluxo['Conferidos'], name='Conferidos (Nova Demanda)', 
+        x=df_fluxo['Hora'], y=df_fluxo['Conferidos'], name='Conferidos (Demanda)', 
         marker_color='#9d26ff', text=df_fluxo['Conferidos'], textposition='outside', textfont=dict(color='#9d26ff')
     ))
     
     fig_fluxo.add_trace(go.Scatter(
-        x=df_fluxo['Hora'], y=df_fluxo['Pendências'], name='Pendências (Fila)', mode='lines+markers+text', 
+        x=df_fluxo['Hora'], y=df_fluxo['Pendências'], name='Pendências (Doca)', mode='lines+markers+text', 
         line=dict(color='#E74C3C', width=3), yaxis='y2', text=df_fluxo['Pendências'], textposition='top center', textfont=dict(color='#E74C3C', weight='bold')
     ))
     
@@ -171,22 +159,19 @@ if not df_bruto.empty:
 
     # BLOCO 3: OPERADORES
     if op_sel == "Equipe Total":
-        st.markdown("<div class='bloco-header'>👥 Performance dos Operadores (Apenas Armazenados)</div>", unsafe_allow_html=True)
+        st.markdown("<div class='bloco-header'>👥 Performance dos Operadores</div>", unsafe_allow_html=True)
         col_rank, col_heat = st.columns([4, 6])
         
-        # O Ranking agora foca APENAS no que foi guardado (Sit 25)
-        df_armazenado_op = df[df['SITUACAO'] == '25']
-        
         with col_rank:
-            st.markdown("##### 🏆 Ranking de Etiquetas Guardadas")
-            rank_op = df_armazenado_op.groupby('OPERADOR').agg({'NU_ETIQUETA': 'nunique', 'Hora_Armz': 'nunique'}).reset_index()
+            st.markdown("##### 🏆 Ranking de Etiquetas")
+            rank_op = df.groupby('OPERADOR').agg({'NU_ETIQUETA': 'nunique', 'Hora_Armz': 'nunique'}).reset_index()
             rank_op.columns = ['Operador', 'Etiquetas', 'Horas']
             rank_op['Etq/Hora'] = (rank_op['Etiquetas'] / rank_op['Horas']).round(1)
             st.dataframe(rank_op.sort_values('Etiquetas', ascending=False)[['Operador', 'Etiquetas', 'Etq/Hora']], use_container_width=True, hide_index=True, height=350)
         
         with col_heat:
             st.markdown("##### 🔥 Calor de Produtividade (Armazenados/Hora)")
-            df_heat = df_armazenado_op.groupby(['OPERADOR', 'Hora_Armz'])['NU_ETIQUETA'].nunique().reset_index()
+            df_heat = df.groupby(['OPERADOR', 'Hora_Armz'])['NU_ETIQUETA'].nunique().reset_index()
             fig_heat = px.density_heatmap(df_heat, x="Hora_Armz", y="OPERADOR", z="NU_ETIQUETA", color_continuous_scale="Blues", text_auto=True)
             fig_heat.update_layout(plot_bgcolor='rgba(0,0,0,0)', yaxis=dict(title=""), xaxis_title="Hora", coloraxis_showscale=False)
             st.plotly_chart(fig_heat, use_container_width=True)
