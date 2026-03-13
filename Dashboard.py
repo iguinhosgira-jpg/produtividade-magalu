@@ -197,7 +197,7 @@ if not df_bruto.empty:
             st.dataframe(rank_op.sort_values('Etiquetas', ascending=False)[['Operador', 'Etiquetas', 'Etq/Hora']], use_container_width=True, hide_index=True, height=350)
         
         with col_heat:
-            st.markdown("##### 🔥 Calor de Produtividade (Armazenados/Hora)")
+            st.markdown("##### 🔥 Produtividade (Armazenados/Hora)")
             df_heat = df_armazenado_hoje.groupby(['OPERADOR', 'Hora_Armz'])['NU_ETIQUETA'].nunique().reset_index()
             fig_heat = px.density_heatmap(df_heat, x="Hora_Armz", y="OPERADOR", z="NU_ETIQUETA", color_continuous_scale="Blues", text_auto=True)
             fig_heat.update_layout(plot_bgcolor='rgba(0,0,0,0)', yaxis=dict(title=""), xaxis_title="Hora", coloraxis_showscale=False)
@@ -207,4 +207,5 @@ if not df_bruto.empty:
 
 else:
     st.error("⚠️ Dados não encontrados para a data selecionada.")
+
 
