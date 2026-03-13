@@ -59,8 +59,8 @@ def carregar_dados():
         df['OPERADOR'] = df.iloc[:, 17].astype(str).str.strip().str.upper()
         
         # Datas seguras
-        df['DT_CONFERENCIA'] = pd.to_datetime(df.iloc[:, 12], errors='coerce', dayfirst=True, format='mixed') 
-        df['DT_ARMAZENAGEM'] = pd.to_datetime(df.iloc[:, 14], errors='coerce', dayfirst=True, format='mixed')
+        df['DT_CONFERENCIA'] = pd.to_datetime(df.iloc[:, 12], errors='coerce', dayfirst=True) 
+        df['DT_ARMAZENAGEM'] = pd.to_datetime(df.iloc[:, 14], errors='coerce', dayfirst=True)
         df['Data_Ref'] = pd.to_datetime(df.iloc[:, 16], errors='coerce', dayfirst=True).dt.date
         
         # Extração das horas
