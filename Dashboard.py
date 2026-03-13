@@ -102,7 +102,7 @@ if not df_bruto.empty:
     operadores_validos = sorted([op for op in df_dia['OPERADOR'].unique() if pd.notna(op) and str(op).strip() != ''])
     
     op_sel = st.sidebar.multiselect(
-        "👥 Filtrar Equipe (Remova os intrusos):", 
+        "👥 Filtrar Equipe:", 
         options=operadores_validos, 
         default=operadores_validos # Já vem todo mundo selecionado por padrão
     )
@@ -207,3 +207,4 @@ if not df_bruto.empty:
 
 else:
     st.error("⚠️ Dados não encontrados para a data selecionada.")
+
