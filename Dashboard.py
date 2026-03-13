@@ -37,7 +37,7 @@ def exibir_kpi(titulo, valor, subtitulo="", cor="#0086FF"):
     """, unsafe_allow_html=True)
 
 # =========================================================================
-# 2. MOTOR DE DADOS
+# 2. MOTOR DE DADOS (CORRIGIDO PARA FORMATOS DISTINTOS)
 # =========================================================================
 @st.cache_data(ttl=300)
 def carregar_dados():
@@ -52,16 +52,26 @@ def carregar_dados():
         
         df = pd.DataFrame(data[1:], columns=data[0])
         
-        # Mapeamento milimétrico das colunas
+        # Mapeamento
         df['NU_ETIQUETA'] = df.iloc[:, 1].astype(str).str.strip()
         df['QT_PRODUTO'] = pd.to_numeric(df.iloc[:, 5], errors='coerce').fillna(0)
         df['SITUACAO'] = df.iloc[:, 7].astype(str).str.strip()
         df['OPERADOR'] = df.iloc[:, 17].astype(str).str.strip().str.upper()
         
-        # Datas seguras
-        df['DT_CONFERENCIA'] = pd.to_datetime(df.iloc[:, 12], errors='coerce', dayfirst=True) 
-        df['DT_ARMAZENAGEM'] = pd.to_datetime(df.iloc[:, 14], errors='coerce', dayfirst=True)
-        df['Data_Ref'] = pd.to_datetime(df.iloc[:, 16], errors='coerce', dayfirst=True).dt.date
+        # --- A MÁGICA DOS FORMATOS ACONTECE AQUI ---
+        
+        # 1. Coluna M (DT_CONFERENCIA) - Formato ISO (Ex: 2026-03-12T16:18:37)
+        # O Pandas é excelente com ISO, não precisa de 'dayfirst', só do 'coerce'
+        df['DT_CONFERENCIA'] = pd.to_datetime(df.iloc[:, 12], errors='coerce') 
+        
+        # 2. Coluna O (DT_ARMAZENAGEM) - Formato BR (Ex: 12/03/2026 16:26:16)
+        # Aqui NÓS OBRIGAMOS a ser dia/mês/ano com format='%d/%m/%Y %H:%M:%S'
+        df['DT_ARMAZENAGEM'] = pd.to_datetime(df.iloc[:, 14], format='%d/%m/%Y %H:%M:%S', errors='coerce')
+        
+        # 3. Coluna Q (Data_Ref) - Assumindo que é formato BR também (Ex: 12/03/2026)
+        df['Data_Ref'] = pd.to_datetime(df.iloc[:, 16], format='%d/%m/%Y', errors='coerce').dt.date
+        
+        # --- FIM DA MÁGICA ---
         
         # Extração das horas
         df['Data_Conf'] = df['DT_CONFERENCIA'].dt.date
@@ -75,10 +85,6 @@ def carregar_dados():
     except Exception as e:
         st.error(f"Erro na conexão: {e}")
         return pd.DataFrame()
-
-df_bruto = carregar_dados()
-
-if not df_bruto.empty:
     # -------------------------------------------------------------------------
     # A REGRA DE OURO: REMOVE SITUAÇÃO 20 E LIXOS
     # Só entra o que JÁ CAIU NA DOCA (23) ou JÁ FOI GUARDADO (25)
