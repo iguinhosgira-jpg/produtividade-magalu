@@ -155,61 +155,84 @@ if not df_bruto.empty:
     with c4: exibir_kpi("Filtro Ativo", texto_op_kpi, "Pessoas analisadas", "#FF9800")
 
     # =========================================================================
-    # BLOCO 2: FLUXO DA DOCA
+    # BLOCO 2: FLUXO DA DOCA (CORRIGIDO: RETRATO FIEL)
     # =========================================================================
     st.markdown("<div class='bloco-header'>🌊 Fluxo de Trabalho e Fila da Doca (Backlog)</div>", unsafe_allow_html=True)
     
-    # Entradas: O que foi conferido no dia (independente se é 23 ou 25)
-    df_in = df_base[df_base['Data_Conf'] == data_sel].groupby('Hora_Conf')['NU_ETIQUETA'].nunique().reset_index(name='Conferidos')
-    df_in.rename(columns={'Hora_Conf': 'Hora'}, inplace=True)
+    # 1. HORAS ÚNICAS DO DIA
+    # Pega todas as horas que tiveram alguma movimentação (Conf ou Armz) no dia selecionado
+    horas_conf = df_base[df_base['Data_Conf'] == data_sel]['Hora_Conf'].dropna().unique()
+    horas_armz = df_producao_equipe['Hora_Armz'].dropna().unique()
+    todas_horas = sorted(list(set(list(horas_conf) + list(horas_armz))))
     
-    # Saídas da Equipe (Barras Azuis) -> SÓ SITUAÇÃO 25
-    df_out_equipe = df_producao_equipe.groupby('Hora_Armz')['NU_ETIQUETA'].nunique().reset_index(name='Armazenados')
-    df_out_equipe.rename(columns={'Hora_Armz': 'Hora'}, inplace=True)
+    dados_grafico = []
     
-    # Saídas Reais do CD (SÓ SITUAÇÃO 25) (Para a matemática da Pendência)
-    df_out_real_cd = df_base[(df_base['Data_Armz'] == data_sel) & (df_base['SITUACAO'] == '25')].groupby('Hora_Armz')['NU_ETIQUETA'].nunique().reset_index(name='Armz_CD')
-    df_out_real_cd.rename(columns={'Hora_Armz': 'Hora'}, inplace=True)
-    
-    # Matemática da Doca
-    df_fluxo = pd.merge(df_in, df_out_equipe, on='Hora', how='outer')
-    df_fluxo = pd.merge(df_fluxo, df_out_real_cd, on='Hora', how='left').fillna(0).sort_values('Hora')
-    
-    df_fluxo['Acum_Conf'] = df_fluxo['Conferidos'].cumsum()
-    df_fluxo['Acum_Armz_CD'] = df_fluxo['Armz_CD'].cumsum()
-    
-    # A linha vermelha = Saldo de Ontem + Entrou Hoje - Saiu Hoje
-    df_fluxo['Pendências'] = saldo_inicial + df_fluxo['Acum_Conf'] - df_fluxo['Acum_Armz_CD']
-    df_fluxo['Pendências'] = df_fluxo['Pendências'].apply(lambda x: x if x > 0 else 0)
+    for hora in todas_horas:
+        # A. ARMAZENADOS NA HORA (Saída da Equipe)
+        # Etiquetas com Sit 25 que foram guardadas exatamente nesta hora
+        armz_hora = df_producao_equipe[df_producao_equipe['Hora_Armz'] == hora]['NU_ETIQUETA'].nunique()
+        
+        # B. CONFERIDOS NA HORA (Entrada Nova)
+        # Etiquetas que foram conferidas exatamente nesta hora (independente de estarem 23 ou 25 agora)
+        conf_hora = df_base[(df_base['Data_Conf'] == data_sel) & (df_base['Hora_Conf'] == hora)]['NU_ETIQUETA'].nunique()
+        
+        # C. PENDÊNCIAS (A Foto da Fila Atualizada)
+        if modo_visao == "Líquida (Apenas do Dia)":
+             # Líquida: Fila = Etiquetas que nasceram hoje, foram conferidas ATÉ AGORA e ainda estão Sit 23
+             pendentes = df_base[
+                 (df_base['Data_Conf'] == data_sel) & 
+                 (df_base['Hora_Conf'] <= hora) & 
+                 (df_base['SITUACAO'] == '23')
+             ]['NU_ETIQUETA'].nunique()
+        else:
+             # Global: Fila = Saldo Herdado + Etiquetas conferidas ATÉ AGORA (hoje) e que ainda estão Sit 23
+             pendentes_hoje = df_base[
+                 (df_base['Data_Conf'] == data_sel) & 
+                 (df_base['Hora_Conf'] <= hora) & 
+                 (df_base['SITUACAO'] == '23')
+             ]['NU_ETIQUETA'].nunique()
+             pendentes = saldo_inicial + pendentes_hoje
+             
+        dados_grafico.append({
+            'Hora': hora,
+            'Armazenados': armz_hora,
+            'Conferidos': conf_hora,
+            'Pendências': pendentes
+        })
+        
+    df_fluxo = pd.DataFrame(dados_grafico)
 
-    max_y = df_fluxo[['Armazenados', 'Conferidos']].max().max() if not df_fluxo.empty else 10
-    teto_grafico = max_y * 1.2 if max_y > 0 else 10
+    if not df_fluxo.empty:
+        max_y = df_fluxo[['Armazenados', 'Conferidos']].max().max() if not df_fluxo.empty else 10
+        teto_grafico = max_y * 1.2 if max_y > 0 else 10
 
-    fig_fluxo = go.Figure()
-    
-    fig_fluxo.add_trace(go.Bar(
-        x=df_fluxo['Hora'], y=df_fluxo['Armazenados'], name='Armazenados (Sua Equipe)', 
-        marker_color='#0086FF', text=df_fluxo['Armazenados'], textposition='auto', textfont=dict(color='white')
-    ))
-    
-    fig_fluxo.add_trace(go.Bar(
-        x=df_fluxo['Hora'], y=df_fluxo['Conferidos'], name='Conferidos (Nova Demanda)', 
-        marker_color='#9d26ff', text=df_fluxo['Conferidos'], textposition='outside', textfont=dict(color='#9d26ff')
-    ))
-    
-    fig_fluxo.add_trace(go.Scatter(
-        x=df_fluxo['Hora'], y=df_fluxo['Pendências'], name='Pendências Reais da Doca', mode='lines+markers+text', 
-        line=dict(color='#E74C3C', width=3), yaxis='y2', text=df_fluxo['Pendências'], textposition='top center', textfont=dict(color='#E74C3C', weight='bold')
-    ))
-    
-    fig_fluxo.update_layout(
-        plot_bgcolor='rgba(0,0,0,0)', barmode='group',
-        legend=dict(orientation="h", y=1.15, x=0.5, xanchor='center'),
-        yaxis=dict(title="Qtd Etiquetas", showgrid=True, gridcolor='#F1F3F5', range=[0, teto_grafico]), 
-        yaxis2=dict(title="Fila Acumulada", overlaying='y', side='right', showgrid=False),
-        hovermode="x unified"
-    )
-    st.plotly_chart(fig_fluxo, use_container_width=True)
+        fig_fluxo = go.Figure()
+        
+        fig_fluxo.add_trace(go.Bar(
+            x=df_fluxo['Hora'], y=df_fluxo['Armazenados'], name='Armazenados (Sua Equipe)', 
+            marker_color='#0086FF', text=df_fluxo['Armazenados'], textposition='auto', textfont=dict(color='white')
+        ))
+        
+        fig_fluxo.add_trace(go.Bar(
+            x=df_fluxo['Hora'], y=df_fluxo['Conferidos'], name='Conferidos (Nova Demanda)', 
+            marker_color='#9d26ff', text=df_fluxo['Conferidos'], textposition='outside', textfont=dict(color='#9d26ff')
+        ))
+        
+        fig_fluxo.add_trace(go.Scatter(
+            x=df_fluxo['Hora'], y=df_fluxo['Pendências'], name='Pendências Reais da Doca', mode='lines+markers+text', 
+            line=dict(color='#E74C3C', width=3), yaxis='y2', text=df_fluxo['Pendências'], textposition='top center', textfont=dict(color='#E74C3C', weight='bold')
+        ))
+        
+        fig_fluxo.update_layout(
+            plot_bgcolor='rgba(0,0,0,0)', barmode='group',
+            legend=dict(orientation="h", y=1.15, x=0.5, xanchor='center'),
+            yaxis=dict(title="Qtd Etiquetas", showgrid=True, gridcolor='#F1F3F5', range=[0, teto_grafico]), 
+            yaxis2=dict(title="Fila Acumulada", overlaying='y', side='right', showgrid=False),
+            hovermode="x unified"
+        )
+        st.plotly_chart(fig_fluxo, use_container_width=True)
+    else:
+        st.info("Nenhum fluxo registrado para as seleções.")
 
     # =========================================================================
     # BLOCO 3: OPERADORES
