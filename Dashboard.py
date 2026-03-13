@@ -60,7 +60,7 @@ def carregar_dados():
         
         df['AGENDA'] = df['AGENDA'].astype(str).str.strip().str.upper()
         df['FORNECEDOR'] = df['FORNECEDOR'].astype(str).str.strip().str.upper()
-        df['OPERADOR'] = df['OPERADOR'].astype(str).str.strip().str.upper() # Padroniza nome em maiúsculo
+        df['OPERADOR'] = df['OPERADOR'].astype(str).str.strip().str.upper()
         
         df['Data_Conf'] = df['DT_CONFERENCIA'].dt.date
         df['Hora_Conf'] = df['DT_CONFERENCIA'].dt.strftime('%H:00')
@@ -82,25 +82,33 @@ if not df_bruto.empty:
     # -------------------------------------------------------------------------
     # 🧹 FAXINA DE DADOS: REMOVENDO OPERADORES FANTASMAS
     # -------------------------------------------------------------------------
-    # Remove qualquer linha onde o operador for vazio, nulo ou a palavra 'NAN'
     df_bruto = df_bruto[~df_bruto['OPERADOR'].isin(['', 'NAN', 'NONE', 'NULL'])]
 
     # FILTROS
     st.sidebar.image("https://magalog.com.br/opengraph-image.jpg?fdd536e7d35ec9da", width=250)
     st.sidebar.markdown("### 🎛️ Filtros Globais")
     
-    data_max = df_bruto['Data_Conf'].dropna().max() # Usando Conf como base máxima para garantir o dia do filtro
+    data_max = df_bruto['Data_Conf'].dropna().max()
     data_sel = st.sidebar.date_input("🗓️ Data da Operação", data_max)
     
     # -------------------------------------------------------------------------
-    # FILTRO ESTRITO DO DIA (Apenas o que "Nasceu" hoje)
+    # FILTRO ESTRITO DO DIA
     # -------------------------------------------------------------------------
     df_dia = df_bruto[df_bruto['Data_Conf'] == data_sel].copy()
     
-    opcoes_ops = ["Equipe Total"] + sorted(df_dia['OPERADOR'].unique().tolist())
-    op_sel = st.sidebar.selectbox("👤 Filtrar Operador", opcoes_ops)
+    # -------------------------------------------------------------------------
+    # NOVO FILTRO: MULTIPLAS SELEÇÕES DE OPERADORES
+    # -------------------------------------------------------------------------
+    operadores_validos = sorted([op for op in df_dia['OPERADOR'].unique() if pd.notna(op) and str(op).strip() != ''])
     
-    df = df_dia if op_sel == "Equipe Total" else df_dia[df_dia['OPERADOR'] == op_sel]
+    op_sel = st.sidebar.multiselect(
+        "👥 Filtrar Equipe (Remova os intrusos):", 
+        options=operadores_validos, 
+        default=operadores_validos # Já vem todo mundo selecionado por padrão
+    )
+    
+    # Aplica o filtro da lista de operadores selecionados
+    df = df_dia[df_dia['OPERADOR'].isin(op_sel)]
 
     # CABEÇALHO
     st.title(f"🚀 Gestão de Produtividade | {data_sel.strftime('%d/%m/%Y')}")
@@ -118,10 +126,18 @@ if not df_bruto.empty:
     sla_medio = espera_valida.mean() if not espera_valida.empty else 0
     txt_sla = f"{int(sla_medio // 60)}h {int(sla_medio % 60)}m"
     
+    # Lógica inteligente para mostrar o texto do Operador no KPI
+    if len(op_sel) == len(operadores_validos):
+        texto_op_kpi = "Equipe Total"
+    elif len(op_sel) == 1:
+        texto_op_kpi = op_sel[0]
+    else:
+        texto_op_kpi = f"{len(op_sel)} Operadores"
+    
     with c1: exibir_kpi("Armazenados (Líquido)", f"{qtd_etiquetas:,.0f}".replace(',','.'), "Referente à entrada de hoje", "#0086FF")
     with c2: exibir_kpi("Peças Processadas", f"{qtd_pecas:,.0f}".replace(',','.'), "Volume físico hoje", "#9B59B6")
     with c3: exibir_kpi("SLA Médio Doca", txt_sla, "Tempo em espera", "#F44336" if sla_medio > 120 else "#4CAF50")
-    with c4: exibir_kpi("Operador Atual", op_sel if op_sel != "Equipe Total" else "Time Completo", "Filtro ativo", "#FF9800")
+    with c4: exibir_kpi("Filtro de Equipe", texto_op_kpi, "Pessoas analisadas", "#FF9800")
 
     # BLOCO 2: FLUXO E PENDÊNCIAS
     st.markdown("<div class='bloco-header'>🌊 Fluxo de Trabalho e Pendências Acumuladas</div>", unsafe_allow_html=True)
@@ -169,8 +185,8 @@ if not df_bruto.empty:
     st.plotly_chart(fig_fluxo, use_container_width=True)
 
     # BLOCO 3: OPERADORES
-    if op_sel == "Equipe Total":
-        st.markdown("<div class='bloco-header'>👥 Performance dos Operadores</div>", unsafe_allow_html=True)
+    if len(op_sel) > 0:
+        st.markdown("<div class='bloco-header'>👥 Performance dos Operadores Filtrados</div>", unsafe_allow_html=True)
         col_rank, col_heat = st.columns([4, 6])
         
         with col_rank:
@@ -186,6 +202,8 @@ if not df_bruto.empty:
             fig_heat = px.density_heatmap(df_heat, x="Hora_Armz", y="OPERADOR", z="NU_ETIQUETA", color_continuous_scale="Blues", text_auto=True)
             fig_heat.update_layout(plot_bgcolor='rgba(0,0,0,0)', yaxis=dict(title=""), xaxis_title="Hora", coloraxis_showscale=False)
             st.plotly_chart(fig_heat, use_container_width=True)
+    else:
+        st.warning("⚠️ Selecione ao menos um operador na barra lateral para ver o painel.")
 
 else:
     st.error("⚠️ Dados não encontrados para a data selecionada.")
